@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Brian & Nicole's Adventure v3.0 (Cloud)</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://img.icons8.com/color/180/pixel-heart.png">
+    <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/pixel-heart.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyD5UQOoCTZymLlIeCaR-SQ40yAwHSjdsrE",
+            authDomain: "bn-sd-luv.firebaseapp.com",
+            projectId: "bn-sd-luv",
+            storageBucket: "bn-sd-luv.firebasestorage.app",
+            messagingSenderId: "802443220386",
+            appId: "1:802443220386:web:bb41e2be07f97c2c7b8efb"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Expose Firebase functions to window so React (Babel) can access them
+        window.db = db;
+        window.auth = auth;
+        window.fs = {
+            collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp,
+            signInWithEmailAndPassword, signOut, onAuthStateChanged
+        };
+        
+        // Signal that Firebase is ready
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'sd-pink': '#ff00ff', 'sd-cyan': '#00ffff', 'sd-orange': '#ff9900',
+              'sd-purple': '#6600cc', 'sd-dark': '#1a0b2e', 'sd-green': '#00ff66',
+            },
+            fontFamily: {
+              'retro-head': ['"Press Start 2P"', 'cursive'],
+              'retro-body': ['"VT323"', 'monospace'],
+            },
+            animation: { 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { background-color: #1a0b2e; color: white; overscroll-behavior: none; }
+      .retro-text-shadow { text-shadow: 2px 2px 0px #1a0b2e, 4px 4px 0px #ff00ff; }
+      .scanlines {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+        background-size: 100% 4px; pointer-events: none; z-index: 50; opacity: 0.6; 
+      }
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #1a0b2e; }
+      ::-webkit-scrollbar-thumb { background: #ff00ff; border-radius: 4px; }
+      
+      /* Login Input Styles */
+      .retro-input {
+          width: 100%; background: #000; border: 2px solid #333; color: #00ffff;
+          font-family: "VT323"; font-size: 1.5rem; padding: 0.5rem; outline: none;
+      }
+      .retro-input:focus { border-color: #ff00ff; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <div class="scanlines"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const XLSX = window.XLSX;
+
+        // --- AI & CONTENT LIBRARIES ---
+        const LOVE_STORIES = [
+            "SYSTEM: Cloud Sync Active. Hearts Connected.", "DATABASE: Retrieving shared memories...",
+            "STATUS: Player 1 and Player 2 are online.", "LOG: Adventure mode engaged.",
+            "WARNING: Excessive cuteness detected in sector 7."
+        ];
+        const QUEST_TIPS = [
+            "Take a selfie here!", "Look for the hidden menu item.", "Check the sunset time.", 
+            "Great spot for a picnic.", "Hold hands for +10 Luck.", "Remember to hydrate!"
+        ];
+        const generateLoveStory = async () => LOVE_STORIES[Math.floor(Math.random() * LOVE_STORIES.length)];
+        const suggestQuestDetails = async () => QUEST_TIPS[Math.floor(Math.random() * QUEST_TIPS.length)];
+
+        // --- COMPONENTS ---
+
+        const RetroCard = ({ children, title, color = 'pink' }) => {
+            const colors = {
+                pink: { border: 'border-sd-pink', text: 'text-sd-pink' },
+                cyan: { border: 'border-sd-cyan', text: 'text-sd-cyan' },
+                orange: { border: 'border-sd-orange', text: 'text-sd-orange' },
+                purple: { border: 'border-sd-purple', text: 'text-sd-purple' },
+                green: { border: 'border-sd-green', text: 'text-sd-green' },
+            };
+            const c = colors[color];
+            return (
+                <div className={`bg-gray-900 border-4 ${c.border} shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] p-4 relative mb-8`}>
+                    <div className={`absolute -top-5 left-4 bg-gray-900 px-2 ${c.text} font-retro-head text-sm uppercase tracking-widest border-l-2 border-r-2 ${c.border}`}>
+                        {title}
+                    </div>
+                    {children}
+                </div>
+            );
+        };
+
+        // --- LOGIN COMPONENT ---
+        const LoginScreen = ({ onLogin }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                try {
+                    // Using the exposed Firebase function
+                    await window.fs.signInWithEmailAndPassword(window.auth, email, password);
+                    // onAuthStateChanged in App will handle the rest
+                } catch (err) {
+                    setError("ACCESS DENIED: " + err.message);
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-sd-dark">
+                    <div className="w-full max-w-sm bg-gray-900 border-4 border-sd-cyan p-6 text-center shadow-[0_0_20px_rgba(0,255,255,0.5)]">
+                        <h1 className="font-retro-head text-xl text-sd-pink mb-6 retro-text-shadow">IDENTIFY PLAYER</h1>
+                        
+                        <form onSubmit={handleAuth} className="space-y-4">
+                            <div>
+                                <label className="block text-left text-sd-green font-retro-head text-[10px] mb-1">EMAIL COMM LINK</label>
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="retro-input" placeholder="player@quest.com" />
+                            </div>
+                            <div>
+                                <label className="block text-left text-sd-green font-retro-head text-[10px] mb-1">PASSCODE</label>
+                                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="retro-input" placeholder="******" />
+                            </div>
+                            
+                            {error && <div className="text-red-500 font-retro-body text-lg blink">{error}</div>}
+
+                            <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-retro-head py-4 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 mt-4">
+                                {loading ? 'CONNECTING...' : 'INSERT COIN (LOGIN)'}
+                            </button>
+                        </form>
+                        <div className="mt-4 text-gray-500 font-retro-body text-sm">
+                            Make sure you created users in Firebase Console first!
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const QuestItem = ({ todo, updateTodo, deleteTodo, currentUser }) => {
+            const [isEditing, setIsEditing] = useState(false);
+            const [editData, setEditData] = useState({ ...todo });
+
+            const mapLink = `https://www.google.com/maps/search/?api=1&query=$?q=${encodeURIComponent(todo.text + " San Diego")}`;
+
+            const handleSave = () => {
+                updateTodo(todo.id, editData);
+                setIsEditing(false);
+            };
+
+            const toggleComplete = () => updateTodo(todo.id, { completed: !todo.completed });
+
+            // EDIT MODE
+            if (isEditing) {
+                return (
+                    <li className="relative p-4 border-2 border-sd-green bg-gray-900 mb-4 shadow-lg">
+                        <div className="absolute -top-3 left-2 bg-gray-900 px-2 text-sd-green font-retro-head text-xs">EDITING...</div>
+                        <div className="flex flex-col gap-3 pt-2">
+                            <input value={editData.text} onChange={(e) => setEditData({...editData, text: e.target.value})} className="retro-input" />
+                            <div className="flex gap-2">
+                                <input type="date" value={editData.date} onChange={(e) => setEditData({...editData, date: e.target.value})} className="retro-input" />
+                                <input type="time" value={editData.time} onChange={(e) => setEditData({...editData, time: e.target.value})} className="retro-input" />
+                            </div>
+                            <textarea value={editData.notes} onChange={(e) => setEditData({...editData, notes: e.target.value})} rows={2} className="retro-input" />
+                            <div className="flex gap-3 mt-2">
+                                <button onClick={handleSave} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700">SAVE</button>
+                                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
+                            </div>
+                        </div>
+                    </li>
+                );
+            }
+
+            // VIEW MODE
+            return (
+                <li className={`relative p-4 border-2 mb-4 shadow-lg transition-all ${todo.completed ? 'border-gray-700 bg-gray-900/50 grayscale' : 'border-sd-cyan bg-gray-900'}`}>
+                    <div className={`absolute -top-3 -right-1 px-2 py-0.5 text-[10px] font-retro-head border bg-gray-900 z-10 ${todo.createdBy === 'Brian' ? 'text-blue-400 border-blue-400' : 'text-purple-400 border-purple-400'}`}>
+                        {todo.createdBy === 'Brian' ? 'P1' : (todo.createdBy === 'Nicole' ? 'P2' : 'CPU')}
+                    </div>
+
+                    <div className="flex justify-between items-start gap-3">
+                        <button onClick={toggleComplete} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 active:scale-95 transition-transform ${todo.completed ? 'bg-sd-cyan border-sd-cyan text-black' : 'border-gray-500 hover:border-white'}`}>
+                            {todo.completed && '✓'}
+                        </button>
+
+                        <div className="flex-1 min-w-0 pt-1"> 
+                            <div className={`font-retro-body text-2xl uppercase leading-none mb-2 break-words ${todo.completed && 'line-through text-gray-500'}`}>{todo.text}</div>
+                            {(todo.date || todo.time) && <div className="text-sd-orange font-retro-head text-[10px] mb-1">⏰ {todo.date} @ {todo.time}</div>}
+                            {todo.notes && <div className="text-gray-400 font-retro-body text-xl border-l-2 border-gray-700 pl-2 mt-2 leading-tight">"{todo.notes}"</div>}
+                        </div>
+
+                        <div className="flex flex-col gap-3">
+                             <a href={mapLink} target="_blank" className="flex items-center justify-center w-[44px] h-[44px] bg-blue-600 border-b-4 border-blue-800 text-white">🗺️</a>
+                             <button onClick={() => setIsEditing(true)} className="flex items-center justify-center w-[44px] h-[44px] bg-sd-orange border-b-4 border-yellow-700 text-black">✏️</button>
+                             <button onClick={() => deleteTodo(todo.id)} className="flex items-center justify-center w-[44px] h-[44px] bg-red-600 border-b-4 border-red-800 text-white">🗑️</button>
+                        </div>
+                    </div>
+
+                    {(todo.completed || todo.geminiSuggestion) && (
+                        <div className="mt-4 pt-3 border-t-2 border-dashed border-gray-700">
+                            {todo.completed ? (
+                                <div className="grid grid-cols-1 gap-2">
+                                    <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
+                                    <StarRating label="P2 RATING" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole'} color="text-purple-400" />
+                                </div>
+                            ) : (
+                                <div className="text-sd-cyan font-retro-body text-lg leading-tight animate-pulse"><span className="text-sd-pink font-retro-head text-xs mr-2">HINT:</span>{todo.geminiSuggestion}</div>
+                            )}
+                        </div>
+                    )}
+                </li>
+            );
+        };
+
+        const StarRating = ({ label, value, onChange, disabled, color }) => (
+            <div className="flex justify-between items-center">
+                <span className={`${color} text-sm font-retro-head`}>{label}:</span>
+                <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <button key={star} disabled={disabled} onClick={() => onChange(star)} className={`text-2xl leading-none transition-transform min-w-[30px] min-h-[30px] ${!disabled && 'active:scale-125'} ${star <= (value || 0) ? 'text-yellow-400' : 'text-gray-700'}`}>
+                            {star <= (value || 0) ? '★' : '☆'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+
+        const QuestLog = ({ user }) => {
+            const [todos, setTodos] = useState([]);
+            const [newInput, setNewInput] = useState('');
+            const [newDate, setNewDate] = useState('');
+            const [newTime, setNewTime] = useState('');
+            const [newNotes, setNewNotes] = useState('');
+
+            // --- FIREBASE REAL-TIME LISTENER ---
+            useEffect(() => {
+                const q = window.fs.query(
+                    window.fs.collection(window.db, "quests"), 
+                    window.fs.orderBy("createdAt", "desc")
+                );
+                
+                const unsubscribe = window.fs.onSnapshot(q, (snapshot) => {
+                    const loadedTodos = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setTodos(loadedTodos);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleAdd = async (e) => {
+                e.preventDefault();
+                if (!newInput.trim()) return;
+                
+                const suggestion = await suggestQuestDetails();
+                
+                await window.fs.addDoc(window.fs.collection(window.db, "quests"), {
+                    text: newInput,
+                    completed: false,
+                    date: newDate,
+                    time: newTime,
+                    notes: newNotes,
+                    createdBy: user.name, // "Brian" or "Nicole"
+                    brianRating: 0,
+                    nicoleRating: 0,
+                    geminiSuggestion: suggestion,
+                    createdAt: window.fs.serverTimestamp()
+                });
+
+                setNewInput(''); setNewDate(''); setNewTime(''); setNewNotes('');
+            };
+
+            const updateTodo = async (id, data) => {
+                const docRef = window.fs.doc(window.db, "quests", id);
+                await window.fs.updateDoc(docRef, data);
+            };
+
+            const deleteTodo = async (id) => {
+                if(confirm("Destroy this record from the archives?")) {
+                    await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id));
+                }
+            };
+
+            // Keep Excel export for physical backups
+            const exportToExcel = () => {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(todos);
+                XLSX.utils.book_append_sheet(wb, ws, "Quests");
+                XLSX.writeFile(wb, "BrianAndNicole_CloudBackup.xlsx");
+            };
+
+            return (
+                <RetroCard title="Mission Log" color="orange">
+                    <div className="mb-4 flex justify-end">
+                        <button onClick={exportToExcel} className="text-[10px] font-retro-head bg-gray-700 text-sd-cyan px-3 py-2 border border-sd-cyan">DOWNLOAD BACKUP</button>
+                    </div>
+
+                    <form onSubmit={handleAdd} className="mb-6 bg-black/30 p-3 border-2 border-dashed border-gray-600">
+                        <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="New Mission..." className="retro-input mb-2 text-2xl" />
+                        <div className="flex gap-2 mb-2">
+                             <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
+                             <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
+                        </div>
+                        <textarea value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="Mission Details..." rows={2} className="retro-input mb-2" />
+                        <button type="submit" className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0">
+                            UPLOAD TO CLOUD
+                        </button>
+                    </form>
+
+                    <ul className="space-y-4">
+                        {todos.map(todo => (
+                            <QuestItem key={todo.id} todo={todo} updateTodo={updateTodo} deleteTodo={deleteTodo} currentUser={user} />
+                        ))}
+                    </ul>
+                </RetroCard>
+            );
+        };
+
+        // --- MAIN APP ---
+        const App = () => {
+            const [user, setUser] = useState(null); // { email: '', name: 'Brian' | 'Nicole' }
+            const [loading, setLoading] = useState(true);
+            const [firebaseReady, setFirebaseReady] = useState(false);
+
+            useEffect(() => {
+                // Wait for the Module Script to expose 'window.fs'
+                const checkFirebase = () => {
+                    if (window.fs && window.auth) {
+                        setFirebaseReady(true);
+                        window.fs.onAuthStateChanged(window.auth, (u) => {
+                            if (u) {
+                                // Determine name based on email (Simple logic)
+                                const name = u.email.toLowerCase().includes('brian') ? 'Brian' : 
+                                            (u.email.toLowerCase().includes('nicole') ? 'Nicole' : 'Guest');
+                                setUser({ email: u.email, name });
+                            } else {
+                                setUser(null);
+                            }
+                            setLoading(false);
+                        });
+                    } else {
+                        setTimeout(checkFirebase, 100);
+                    }
+                };
+                checkFirebase();
+            }, []);
+
+            if (!firebaseReady) return <div className="text-white p-10 font-retro-head">BOOTING SYSTEMS...</div>;
+            if (loading) return <div className="text-white p-10 font-retro-head">AUTHENTICATING...</div>;
+            if (!user) return <LoginScreen />;
+
+            return (
+                <div className="min-h-screen pb-20 bg-sd-dark">
+                    <div className="min-h-screen w-full bg-sd-dark/90 backdrop-blur-sm overflow-y-auto">
+                        <header className="p-4 text-center border-b-4 border-sd-pink bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+                             <div className="flex justify-between items-center mb-2">
+                                <span className="font-retro-head text-xs text-gray-400">P{user.name === 'Brian' ? '1' : '2'}: <span className={user.name === 'Brian' ? 'text-blue-400' : 'text-purple-400'}>{user.name.toUpperCase()}</span></span>
+                                <button onClick={() => window.fs.signOut(window.auth)} className="text-[10px] font-retro-head text-red-400 p-2 border border-red-900">LOGOUT</button>
+                             </div>
+                             <h1 className="font-retro-head text-xl text-sd-cyan retro-text-shadow leading-relaxed">SOUTHERN CALI QUEST</h1>
+                             <div className="font-retro-body text-xl text-sd-pink tracking-widest">BRIAN & NICOLE</div>
+                        </header>
+
+                        <main className="container mx-auto px-4 py-6 max-w-xl">
+                            <RetroCard title="Soulmate Sync" color="cyan">
+                                <div className="font-retro-body text-lg leading-relaxed text-gray-200 text-center animate-pulse">
+                                    DATABASE CONNECTED. SYNCING HEARTS...
+                                </div>
+                            </RetroCard>
+                            <QuestLog user={user} />
+                        </main>
+                        
+                        <footer className="text-center py-6 font-retro-body text-gray-500 text-lg border-t border-gray-800 bg-black/80">
+                            v.3.0.0 [CLOUD EDITION]
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

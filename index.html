@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Brian & Nicole's Adventure v4.1</title>
+    <title>Brian & Nicole's Quest Log v5.0</title>
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -21,9 +21,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        // UPDATED: Import uploadBytesResumable for progress monitoring
-        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+        import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyD5UQOoCTZymLlIeCaR-SQ40yAwHSjdsrE",
@@ -37,18 +35,15 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const storage = getStorage(app);
         const provider = new GoogleAuthProvider();
 
         window.db = db;
         window.auth = auth;
-        window.storage = storage;
         window.googleProvider = provider;
         
         window.fs = {
-            collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp,
-            signInWithPopup, signOut, onAuthStateChanged,
-            ref, uploadBytesResumable, getDownloadURL 
+            collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp,
+            signInWithPopup, signOut, onAuthStateChanged
         };
         
         window.dispatchEvent(new Event('firebase-ready'));
@@ -69,7 +64,6 @@
             animation: { 
                 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                 'glow': 'glow 2s ease-in-out infinite alternate',
-                'spin-slow': 'spin 3s linear infinite'
             },
             keyframes: {
                 glow: {
@@ -114,19 +108,6 @@
         const LoadingSpinner = () => (
             <div className="flex justify-center items-center p-4">
                 <div className="w-8 h-8 border-4 border-sd-pink border-t-sd-cyan rounded-full animate-spin"></div>
-            </div>
-        );
-
-        // Progress Bar Component
-        const ProgressBar = ({ progress }) => (
-            <div className="w-full bg-gray-800 border border-gray-600 h-6 mt-2 relative">
-                <div 
-                    className="h-full bg-sd-green transition-all duration-300 ease-out"
-                    style={{ width: `${progress}%` }}
-                ></div>
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-retro-head text-white drop-shadow-md">
-                    UPLOADING {Math.round(progress)}%
-                </div>
             </div>
         );
 
@@ -175,62 +156,13 @@
             );
         };
 
-        // --- UPLOAD HELPER FUNCTION ---
-        // Handles the progress logic for both Add and Edit modes
-        const uploadImageWithProgress = (file, setProgress) => {
-            return new Promise((resolve, reject) => {
-                if (!file) return resolve(null);
-                
-                // Create Storage Ref
-                const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${file.name}`);
-                
-                // Start Resumable Upload
-                const uploadTask = window.fs.uploadBytesResumable(storageRef, file);
-
-                uploadTask.on('state_changed', 
-                    (snapshot) => {
-                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        setProgress(progress);
-                    }, 
-                    (error) => {
-                        reject(error);
-                    }, 
-                    async () => {
-                        const downloadURL = await window.fs.getDownloadURL(uploadTask.snapshot.ref);
-                        resolve(downloadURL);
-                    }
-                );
-            });
-        };
-
         const QuestItem = ({ todo, updateTodo, archiveTodo, deleteTodo, currentUser }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [editData, setEditData] = useState({ ...todo });
             
-            // Upload States
-            const [uploadProgress, setUploadProgress] = useState(0);
-            const [isUploading, setIsUploading] = useState(false);
-            const [newFile, setNewFile] = useState(null);
-            
-            const fileInputRef = useRef(null);
-
             const handleSave = async () => {
-                setIsUploading(true);
-                try {
-                    let finalImageUrl = editData.imageUrl;
-                    
-                    if (newFile) {
-                        finalImageUrl = await uploadImageWithProgress(newFile, setUploadProgress);
-                    }
-
-                    updateTodo(todo.id, { ...editData, imageUrl: finalImageUrl });
-                    setIsEditing(false);
-                } catch (err) {
-                    alert("Upload Error: " + err.message);
-                }
-                setIsUploading(false);
-                setUploadProgress(0);
-                setNewFile(null);
+                updateTodo(todo.id, editData);
+                setIsEditing(false);
             };
 
             if (isEditing) {
@@ -243,27 +175,9 @@
                             <label className="text-sd-green font-retro-head text-[10px]">DESCRIPTION</label>
                             <textarea value={editData.description} onChange={(e) => setEditData({...editData, description: e.target.value})} className="retro-input" rows={3} />
 
-                            <label className="text-sd-green font-retro-head text-[10px]">EVIDENCE (PHOTO)</label>
-                            
-                            {/* Image Preview & Upload UI */}
-                            <div className="border border-gray-600 p-2 bg-black/50">
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-white px-3 py-2 font-retro-head text-xs border border-gray-500 hover:bg-gray-600">
-                                        {editData.imageUrl || newFile ? "CHANGE PHOTO" : "ADD PHOTO"}
-                                    </button>
-                                    <input type="file" ref={fileInputRef} onChange={(e) => setNewFile(e.target.files[0])} className="hidden" accept="image/*" />
-                                    <span className="font-retro-body text-gray-400 truncate flex-1">
-                                        {newFile ? newFile.name : (editData.imageUrl ? "Current Image Loaded" : "No image selected")}
-                                    </span>
-                                </div>
-                                {isUploading && <ProgressBar progress={uploadProgress} />}
-                            </div>
-
                             <div className="flex gap-2 pt-2">
-                                <button onClick={handleSave} disabled={isUploading} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700 hover:brightness-110 disabled:opacity-50">
-                                    {isUploading ? 'SAVING...' : 'SAVE'}
-                                </button>
-                                <button onClick={() => setIsEditing(false)} disabled={isUploading} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
+                                <button onClick={handleSave} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700 hover:brightness-110">SAVE</button>
+                                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
                             </div>
                         </div>
                     </li>
@@ -299,19 +213,9 @@
                             </div>
                         </div>
 
-                        {(todo.description || todo.imageUrl) && (
+                        {todo.description && (
                             <div className={`bg-black/40 p-3 border-l-4 ${todo.completed ? 'border-sd-pink' : 'border-gray-600'}`}>
-                                {todo.imageUrl && (
-                                    <div className="relative mb-2 group">
-                                        <img src={todo.imageUrl} className="w-full h-48 object-cover border-2 border-white/20" alt="Quest evidence" />
-                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-retro-head text-xs">
-                                            <a href={todo.imageUrl} target="_blank" className="hover:underline">OPEN FULL SIZE</a>
-                                        </div>
-                                    </div>
-                                )}
-                                {todo.description && (
-                                    <p className="font-retro-body text-xl leading-snug whitespace-pre-wrap">{todo.description}</p>
-                                )}
+                                <p className="font-retro-body text-xl leading-snug whitespace-pre-wrap">{todo.description}</p>
                             </div>
                         )}
 
@@ -347,18 +251,24 @@
             const [newDesc, setNewDesc] = useState('');
             const [newDate, setNewDate] = useState('');
             const [newTime, setNewTime] = useState('');
-            
-            // Upload States for "New Quest"
-            const [newImageFile, setNewImageFile] = useState(null);
-            const [uploadProgress, setUploadProgress] = useState(0);
-            const [isUploading, setIsUploading] = useState(false);
-            
-            const fileInputRef = useRef(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
             useEffect(() => {
-                const q = window.fs.query(window.fs.collection(window.db, "quests"), window.fs.orderBy("createdAt", "desc"));
+                // FIXED QUERY: No orderBy, no where filter. Just get the collection.
+                // This ensures old data missing fields isn't hidden.
+                const q = window.fs.collection(window.db, "quests");
+                
                 return window.fs.onSnapshot(q, (snapshot) => {
-                    setTodos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    // Sort client-side instead to handle missing timestamps safely
+                    loaded.sort((a, b) => {
+                         const timeA = a.createdAt ? a.createdAt.seconds : 0;
+                         const timeB = b.createdAt ? b.createdAt.seconds : 0;
+                         return timeB - timeA; // Descending
+                    });
+                    
+                    setTodos(loaded);
                 });
             }, []);
 
@@ -366,17 +276,11 @@
                 e.preventDefault();
                 if (!newInput.trim()) return;
                 
-                setIsUploading(true);
+                setIsSubmitting(true);
                 try {
-                    let imageUrl = null;
-                    if (newImageFile) {
-                        imageUrl = await uploadImageWithProgress(newImageFile, setUploadProgress);
-                    }
-
                     await window.fs.addDoc(window.fs.collection(window.db, "quests"), {
                         text: newInput,
                         description: newDesc,
-                        imageUrl: imageUrl,
                         completed: false,
                         archived: false,
                         date: newDate, 
@@ -387,22 +291,22 @@
                         createdAt: window.fs.serverTimestamp()
                     });
 
-                    // Reset Form
                     setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); 
-                    setNewImageFile(null); 
-                    if(fileInputRef.current) fileInputRef.current.value = "";
                 } catch (err) {
                     alert("Error saving quest: " + err.message);
                 }
-                setIsUploading(false);
-                setUploadProgress(0);
+                setIsSubmitting(false);
             };
 
             const updateTodo = async (id, data) => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), data); };
             const archiveTodo = async (id) => { if(confirm("Move to Archive?")) await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); };
             const deleteTodo = async (id) => { if(confirm("Permanently delete?")) await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); };
 
-            const visibleTodos = todos.filter(t => viewMode === 'active' ? !t.archived : t.archived);
+            // Robust filtering: treat undefined 'archived' as false (Active)
+            const visibleTodos = todos.filter(t => {
+                const isArchived = t.archived === true;
+                return viewMode === 'active' ? !isArchived : isArchived;
+            });
 
             return (
                 <div>
@@ -415,27 +319,15 @@
                         <RetroCard title="New Objective" color="orange">
                             <form onSubmit={handleAdd} className="bg-black/30 p-3 border-2 border-dashed border-gray-600">
                                 <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="Mission Title..." className="retro-input mb-2 text-xl" />
-                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Briefing..." rows={3} className="retro-input mb-2 text-lg" />
+                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Briefing (Description)..." rows={3} className="retro-input mb-2 text-lg" />
                                 
                                 <div className="flex gap-2 mb-2">
                                      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
                                      <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
                                 </div>
                                 
-                                {/* Photo Upload with Progress Bar */}
-                                <div className="mb-4">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-sd-cyan border border-sd-cyan px-3 py-2 font-retro-head text-xs hover:bg-gray-600">
-                                            {newImageFile ? "CHANGE PHOTO" : "UPLOAD PHOTO"}
-                                        </button>
-                                        <span className="font-retro-body text-gray-400 truncate">{newImageFile ? newImageFile.name : "No evidence selected"}</span>
-                                        <input type="file" ref={fileInputRef} onChange={(e) => setNewImageFile(e.target.files[0])} className="hidden" accept="image/*" />
-                                    </div>
-                                    {isUploading && <ProgressBar progress={uploadProgress} />}
-                                </div>
-
-                                <button type="submit" disabled={isUploading} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
-                                    {isUploading ? "TRANSMITTING DATA..." : "UPLOAD TO CLOUD"}
+                                <button type="submit" disabled={isSubmitting} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
+                                    {isSubmitting ? "TRANSMITTING DATA..." : "ADD TO LOG"}
                                 </button>
                             </form>
                         </RetroCard>

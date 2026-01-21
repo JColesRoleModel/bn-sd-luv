@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Brian & Nicole's Quest Log v5.0</title>
+    <title>Brian & Nicole's Quest Log v7.0</title>
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,12 +16,12 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // Added arrayUnion for comments
+        import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyD5UQOoCTZymLlIeCaR-SQ40yAwHSjdsrE",
@@ -40,12 +40,8 @@
         window.db = db;
         window.auth = auth;
         window.googleProvider = provider;
-        
-        window.fs = {
-            collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp,
-            signInWithPopup, signOut, onAuthStateChanged
-        };
-        
+        // Expose arrayUnion
+        window.fs = { collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, serverTimestamp, arrayUnion, signInWithPopup, signOut, onAuthStateChanged };
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
@@ -64,11 +60,18 @@
             animation: { 
                 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                 'glow': 'glow 2s ease-in-out infinite alternate',
+                'shake': 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both'
             },
             keyframes: {
                 glow: {
                     '0%': { boxShadow: '0 0 5px #ff00ff' },
                     '100%': { boxShadow: '0 0 20px #ff00ff, 0 0 10px #00ffff' }
+                },
+                shake: {
+                    '10%, 90%': { transform: 'translate3d(-1px, 0, 0)' },
+                    '20%, 80%': { transform: 'translate3d(2px, 0, 0)' },
+                    '30%, 50%, 70%': { transform: 'translate3d(-4px, 0, 0)' },
+                    '40%, 60%': { transform: 'translate3d(4px, 0, 0)' }
                 }
             }
           }
@@ -76,23 +79,25 @@
       }
     </script>
     <style>
-      body { background-color: #1a0b2e; color: white; overscroll-behavior: none; }
+      body { background-color: #1a0b2e; color: white; overscroll-behavior: none; animation: flicker 0.15s infinite; }
       .retro-text-shadow { text-shadow: 2px 2px 0px #1a0b2e, 4px 4px 0px #ff00ff; }
-      .scanlines {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
-        background-size: 100% 4px; pointer-events: none; z-index: 50; opacity: 0.6; 
-      }
-      ::-webkit-scrollbar { width: 8px; }
-      ::-webkit-scrollbar-track { background: #1a0b2e; }
-      ::-webkit-scrollbar-thumb { background: #ff00ff; border-radius: 4px; }
-      
+      .font-retro-body { letter-spacing: 0.05em; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+      input[type="date"], input[type="time"] { color-scheme: dark; }
       .retro-input {
           width: 100%; background: #000; border: 2px solid #333; color: #00ffff;
           font-family: "VT323"; font-size: 1.5rem; padding: 0.5rem; outline: none;
       }
+      .scanlines {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+        background-size: 100% 4px; pointer-events: none; z-index: 50; 
+        opacity: 0.15 !important;
+      }
       .bw-filter { filter: grayscale(100%) contrast(0.8) brightness(0.8); }
       .color-filter { filter: grayscale(0%) contrast(1.1) brightness(1.1); }
+      @keyframes flicker { 0% { opacity: 0.99; } 5% { opacity: 0.98; } 100% { opacity: 0.99; } }
+      @keyframes modalPop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+      .animate-modal { animation: modalPop 0.2s ease-out forwards; }
     </style>
 </head>
 <body>
@@ -100,16 +105,45 @@
     <div class="scanlines"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect } = React;
 
-        // --- COMPONENTS ---
-        
-        // Simple Loading Spinner
+        // --- CONSTANTS ---
+        const PERMANENT_QUEST = {
+            id: 'permanent_01',
+            text: 'Stars Align @Baja Beach Cafe',
+            description: 'The beginning of everything.',
+            completed: true,
+            archived: false,
+            date: '2025-06-30',
+            time: '19:15',
+            createdBy: 'Brian',
+            brianRating: 5,
+            nicoleRating: 5,
+            isPermanent: true,
+            comments: [] 
+        };
+
         const LoadingSpinner = () => (
             <div className="flex justify-center items-center p-4">
                 <div className="w-8 h-8 border-4 border-sd-pink border-t-sd-cyan rounded-full animate-spin"></div>
             </div>
         );
+
+        const RetroModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText="CONFIRM", cancelText="CANCEL", isDestructive=false }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-sd-dark border-4 border-white p-6 text-center shadow-[0_0_30px_rgba(255,0,255,0.4)] max-w-sm w-full animate-modal">
+                        <h3 className="font-retro-head text-sd-cyan text-lg mb-4">{title}</h3>
+                        <p className="font-retro-body text-xl mb-8 text-gray-200">{message}</p>
+                        <div className="flex gap-4 justify-center">
+                            <button onClick={onCancel} className="flex-1 bg-gray-700 text-white font-retro-head py-3 border-b-4 border-gray-900 active:border-b-0 active:translate-y-1">{cancelText}</button>
+                            <button onClick={onConfirm} className={`flex-1 font-retro-head py-3 border-b-4 active:border-b-0 active:translate-y-1 text-black ${isDestructive ? 'bg-red-500 border-red-800' : 'bg-sd-green border-green-800'}`}>{confirmText}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         const RetroCard = ({ children, title, color = 'pink', className = '' }) => {
             const colors = {
@@ -135,6 +169,7 @@
 
             const handleGoogleLogin = async () => {
                 setLoading(true);
+                if (navigator.vibrate) navigator.vibrate(20);
                 try {
                     await window.fs.signInWithPopup(window.auth, window.googleProvider);
                 } catch (err) {
@@ -156,25 +191,57 @@
             );
         };
 
+        // --- QUEST ITEM ---
         const QuestItem = ({ todo, updateTodo, archiveTodo, deleteTodo, currentUser }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [editData, setEditData] = useState({ ...todo });
+            const [commentInput, setCommentInput] = useState('');
             
+            const vibrate = () => { if (navigator.vibrate) navigator.vibrate(15); };
+
             const handleSave = async () => {
+                vibrate();
                 updateTodo(todo.id, editData);
                 setIsEditing(false);
             };
 
-            if (isEditing) {
+            const handleToggle = () => {
+                if (todo.isPermanent) return;
+                vibrate();
+                updateTodo(todo.id, { completed: !todo.completed });
+            };
+
+            const handleAddComment = async (e) => {
+                e.preventDefault();
+                if(!commentInput.trim()) return;
+                vibrate();
+
+                // Add comment logic
+                if (todo.isPermanent) {
+                    alert("Comments disabled on Legacy Files.");
+                    return;
+                }
+
+                const newComment = {
+                    text: commentInput,
+                    author: currentUser.name,
+                    timestamp: Date.now()
+                };
+
+                await updateTodo(todo.id, {
+                    comments: window.fs.arrayUnion(newComment)
+                });
+                setCommentInput('');
+            };
+
+            if (isEditing && !todo.isPermanent) {
                 return (
                     <li className="relative p-4 border-2 border-sd-green bg-gray-900 mb-4 shadow-lg">
                         <div className="flex flex-col gap-3">
                             <label className="text-sd-green font-retro-head text-[10px]">MISSION TITLE</label>
                             <input value={editData.text} onChange={(e) => setEditData({...editData, text: e.target.value})} className="retro-input" />
-                            
                             <label className="text-sd-green font-retro-head text-[10px]">DESCRIPTION</label>
                             <textarea value={editData.description} onChange={(e) => setEditData({...editData, description: e.target.value})} className="retro-input" rows={3} />
-
                             <div className="flex gap-2 pt-2">
                                 <button onClick={handleSave} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700 hover:brightness-110">SAVE</button>
                                 <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
@@ -196,7 +263,7 @@
 
                     <div className="flex flex-col gap-4">
                         <div className="flex justify-between items-start gap-3">
-                            <button onClick={() => updateTodo(todo.id, { completed: !todo.completed })} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 transition-transform active:scale-95 ${todo.completed ? 'bg-sd-cyan text-black border-white shadow-[0_0_10px_#00ffff]' : 'border-gray-500 hover:border-white'}`}>
+                            <button onClick={handleToggle} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 transition-transform active:scale-95 ${todo.completed ? 'bg-sd-cyan text-black border-white shadow-[0_0_10px_#00ffff]' : 'border-gray-500 hover:border-white'}`} disabled={todo.isPermanent}>
                                 {todo.completed && '✓'}
                             </button>
                             
@@ -207,10 +274,16 @@
                                 {(todo.date || todo.time) && <div className="text-sd-orange font-retro-head text-[10px] mt-1">⏰ {todo.date} {todo.time}</div>}
                             </div>
 
-                            <div className="flex flex-col gap-2">
-                                 <button onClick={() => setIsEditing(true)} className="w-[40px] h-[40px] bg-sd-orange border-b-4 border-yellow-700 text-black flex items-center justify-center">✏️</button>
-                                 <button onClick={() => archiveTodo(todo.id)} className="w-[40px] h-[40px] bg-gray-600 border-b-4 border-gray-800 text-white flex items-center justify-center" title="Archive">📦</button>
-                            </div>
+                            {!todo.isPermanent && (
+                                <div className="flex flex-col gap-2">
+                                    <button onClick={() => { vibrate(); setIsEditing(true); }} className="w-[40px] h-[40px] bg-sd-orange border-b-4 border-yellow-700 text-black flex items-center justify-center">✏️</button>
+                                    {todo.archived ? (
+                                        <button onClick={() => { vibrate(); deleteTodo(todo.id); }} className="w-[40px] h-[40px] bg-red-600 border-b-4 border-red-800 text-white flex items-center justify-center">🗑️</button>
+                                    ) : (
+                                        <button onClick={() => { vibrate(); archiveTodo(todo.id); }} className="w-[40px] h-[40px] bg-gray-600 border-b-4 border-gray-800 text-white flex items-center justify-center">📦</button>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {todo.description && (
@@ -220,9 +293,34 @@
                         )}
 
                         {todo.completed && (
-                             <div className="mt-2 pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
-                                <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
-                                <StarRating label="P2 RATING" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole'} color="text-purple-400" />
+                            <div className="space-y-2">
+                                {/* Ratings */}
+                                <div className="pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
+                                    <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian' || todo.isPermanent} color="text-blue-400" />
+                                    <StarRating label="P2 RATING" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole' || todo.isPermanent} color="text-purple-400" />
+                                </div>
+
+                                {/* Comments Section */}
+                                {!todo.isPermanent && (
+                                    <div className="mt-4 bg-black/50 p-3 border border-gray-700">
+                                        <h4 className="font-retro-head text-xs text-gray-400 mb-2">COMM LOG:</h4>
+                                        <div className="space-y-2 mb-3">
+                                            {todo.comments && todo.comments.map((c, i) => (
+                                                <div key={i} className={`p-2 border-l-4 ${c.author === 'Nicole' ? 'border-sd-pink bg-sd-pink/10' : 'border-blue-400 bg-blue-900/20'}`}>
+                                                    <div className={`text-[10px] font-retro-head mb-1 uppercase ${c.author === 'Nicole' ? 'text-sd-pink' : 'text-blue-400'}`}>
+                                                        {c.author}
+                                                    </div>
+                                                    <div className="font-retro-body text-lg leading-tight text-white">{c.text}</div>
+                                                </div>
+                                            ))}
+                                            {(!todo.comments || todo.comments.length === 0) && <div className="text-gray-600 font-retro-body text-sm italic">No data logged.</div>}
+                                        </div>
+                                        <form onSubmit={handleAddComment} className="flex gap-2">
+                                            <input value={commentInput} onChange={(e) => setCommentInput(e.target.value)} className="flex-1 bg-gray-900 border border-gray-600 p-2 text-white font-retro-body" placeholder="Write message..." />
+                                            <button type="submit" className="bg-gray-700 px-3 text-xs font-retro-head border border-gray-500 hover:bg-gray-600">SEND</button>
+                                        </form>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -235,7 +333,8 @@
                 <span className={`${color} text-sm font-retro-head`}>{label}:</span>
                 <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((star) => (
-                        <button key={star} disabled={disabled} onClick={() => onChange(star)} className={`text-xl ${star <= (value || 0) ? 'text-yellow-400 drop-shadow-[0_0_5px_rgba(255,255,0,0.8)]' : 'text-gray-600'}`}>
+                        <button key={star} disabled={disabled} onClick={() => { if(navigator.vibrate) navigator.vibrate(10); onChange(star); }} 
+                            className={`text-xl transition-all ${star <= (value || 0) ? 'text-yellow-400 drop-shadow-[0_0_5px_rgba(255,255,0,0.8)]' : 'text-gray-500'}`}>
                             {star <= (value || 0) ? '★' : '☆'}
                         </button>
                     ))}
@@ -252,29 +351,33 @@
             const [newDate, setNewDate] = useState('');
             const [newTime, setNewTime] = useState('');
             const [isSubmitting, setIsSubmitting] = useState(false);
+            const [shakeInput, setShakeInput] = useState(false);
+
+            const [modal, setModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDestructive: false });
+
+            const vibrate = () => { if (navigator.vibrate) navigator.vibrate(20); };
 
             useEffect(() => {
-                // FIXED QUERY: No orderBy, no where filter. Just get the collection.
-                // This ensures old data missing fields isn't hidden.
                 const q = window.fs.collection(window.db, "quests");
-                
                 return window.fs.onSnapshot(q, (snapshot) => {
                     const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    
-                    // Sort client-side instead to handle missing timestamps safely
                     loaded.sort((a, b) => {
                          const timeA = a.createdAt ? a.createdAt.seconds : 0;
                          const timeB = b.createdAt ? b.createdAt.seconds : 0;
-                         return timeB - timeA; // Descending
+                         return timeB - timeA; 
                     });
-                    
                     setTodos(loaded);
                 });
             }, []);
 
             const handleAdd = async (e) => {
                 e.preventDefault();
-                if (!newInput.trim()) return;
+                vibrate();
+                if (!newInput.trim()) {
+                    setShakeInput(true);
+                    setTimeout(() => setShakeInput(false), 500);
+                    return;
+                }
                 
                 setIsSubmitting(true);
                 try {
@@ -288,58 +391,63 @@
                         createdBy: user.name, 
                         brianRating: 0, 
                         nicoleRating: 0,
+                        comments: [], // Initialize empty comments array
                         createdAt: window.fs.serverTimestamp()
                     });
-
                     setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); 
-                } catch (err) {
-                    alert("Error saving quest: " + err.message);
-                }
+                } catch (err) { alert("Error: " + err.message); }
                 setIsSubmitting(false);
             };
 
             const updateTodo = async (id, data) => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), data); };
-            const archiveTodo = async (id) => { if(confirm("Move to Archive?")) await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); };
-            const deleteTodo = async (id) => { if(confirm("Permanently delete?")) await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); };
+            
+            const archiveTodo = (id) => {
+                setModal({
+                    isOpen: true, title: "ARCHIVE MISSION", message: "Move to Memory Card?", confirmText: "ARCHIVE", isDestructive: false,
+                    onConfirm: async () => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); setModal({ isOpen: false }); }
+                });
+            };
 
-            // Robust filtering: treat undefined 'archived' as false (Active)
-            const visibleTodos = todos.filter(t => {
-                const isArchived = t.archived === true;
-                return viewMode === 'active' ? !isArchived : isArchived;
-            });
+            const deleteTodo = (id) => {
+                setModal({
+                    isOpen: true, title: "DESTROY DATA", message: "Permanently delete this memory?", confirmText: "DELETE", isDestructive: true,
+                    onConfirm: async () => { await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); setModal({ isOpen: false }); }
+                });
+            };
+
+            const visibleTodos = todos.filter(t => viewMode === 'active' ? !t.archived : t.archived);
 
             return (
                 <div>
+                    <RetroModal isOpen={modal.isOpen} title={modal.title} message={modal.message} confirmText={modal.confirmText} isDestructive={modal.isDestructive} onConfirm={modal.onConfirm} onCancel={() => setModal({...modal, isOpen: false})} />
+
                     <div className="flex mb-6 border-b-4 border-gray-700">
-                        <button onClick={() => setViewMode('active')} className={`flex-1 font-retro-head py-3 ${viewMode === 'active' ? 'bg-sd-pink text-black' : 'text-gray-500 hover:text-white'}`}>CURRENT QUESTS</button>
-                        <button onClick={() => setViewMode('archive')} className={`flex-1 font-retro-head py-3 ${viewMode === 'archive' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>MEMORY CARD</button>
+                        <button onClick={() => { vibrate(); setViewMode('active'); }} className={`flex-1 font-retro-head py-3 ${viewMode === 'active' ? 'bg-sd-pink text-black' : 'text-gray-500 hover:text-white'}`}>CURRENT QUESTS</button>
+                        <button onClick={() => { vibrate(); setViewMode('archive'); }} className={`flex-1 font-retro-head py-3 ${viewMode === 'archive' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>MEMORY CARD</button>
                     </div>
 
                     {viewMode === 'active' && (
-                        <RetroCard title="New Objective" color="orange">
-                            <form onSubmit={handleAdd} className="bg-black/30 p-3 border-2 border-dashed border-gray-600">
-                                <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="Mission Title..." className="retro-input mb-2 text-xl" />
-                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Briefing (Description)..." rows={3} className="retro-input mb-2 text-lg" />
-                                
-                                <div className="flex gap-2 mb-2">
-                                     <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
-                                     <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
-                                </div>
-                                
-                                <button type="submit" disabled={isSubmitting} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
-                                    {isSubmitting ? "TRANSMITTING DATA..." : "ADD TO LOG"}
-                                </button>
-                            </form>
-                        </RetroCard>
+                        <>
+                            <RetroCard title="New Objective" color="orange">
+                                <form onSubmit={handleAdd} className="bg-black/30 p-3 border-2 border-dashed border-gray-600">
+                                    <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="Mission Title..." className={`retro-input mb-2 text-xl ${shakeInput ? 'animate-shake border-red-500' : ''}`} />
+                                    <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Briefing..." rows={3} className="retro-input mb-2 text-lg" />
+                                    <div className="flex gap-2 mb-2">
+                                         <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
+                                         <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
+                                    </div>
+                                    <button type="submit" disabled={isSubmitting} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
+                                        {isSubmitting ? "TRANSMITTING DATA..." : "ADD TO LOG"}
+                                    </button>
+                                </form>
+                            </RetroCard>
+                            <div className="mb-6"><QuestItem todo={PERMANENT_QUEST} currentUser={user} updateTodo={() => {}} archiveTodo={() => {}} deleteTodo={() => {}} /></div>
+                        </>
                     )}
 
                     <div className="space-y-6">
-                        {visibleTodos.length === 0 && (
-                            <div className="text-center font-retro-body text-gray-500 text-xl py-10">NO DATA FOUND IN SECTOR.</div>
-                        )}
-                        {visibleTodos.map(todo => (
-                            <QuestItem key={todo.id} todo={todo} updateTodo={updateTodo} archiveTodo={archiveTodo} deleteTodo={deleteTodo} currentUser={user} />
-                        ))}
+                        {visibleTodos.length === 0 && viewMode === 'archive' && <div className="text-center font-retro-body text-gray-500 text-xl py-10">MEMORY CARD EMPTY.</div>}
+                        {visibleTodos.map(todo => <QuestItem key={todo.id} todo={todo} updateTodo={updateTodo} archiveTodo={archiveTodo} deleteTodo={deleteTodo} currentUser={user} />)}
                     </div>
                 </div>
             );
@@ -359,9 +467,7 @@
                                 const email = u.email.toLowerCase();
                                 const name = email.includes('brian') ? 'Brian' : (email.includes('nicole') ? 'Nicole' : 'Guest');
                                 setUser({ email: u.email, name, photo: u.photoURL });
-                            } else {
-                                setUser(null);
-                            }
+                            } else { setUser(null); }
                             setLoading(false);
                         });
                     } else { setTimeout(checkFirebase, 100); }

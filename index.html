@@ -3,31 +3,27 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Brian & Nicole's Adventure v4.0</title>
+    <title>Brian & Nicole's Adventure v4.1</title>
     
-    <!-- PWA Settings -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://img.icons8.com/color/180/pixel-heart.png">
     <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/pixel-heart.png">
 
-    <!-- Styles -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 
-    <!-- React Libraries -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 
-    <!-- FIREBASE SETUP -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        // NEW: Import Storage
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+        // UPDATED: Import uploadBytesResumable for progress monitoring
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyD5UQOoCTZymLlIeCaR-SQ40yAwHSjdsrE",
@@ -44,7 +40,6 @@
         const storage = getStorage(app);
         const provider = new GoogleAuthProvider();
 
-        // Expose Firebase functions
         window.db = db;
         window.auth = auth;
         window.storage = storage;
@@ -53,7 +48,7 @@
         window.fs = {
             collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp,
             signInWithPopup, signOut, onAuthStateChanged,
-            ref, uploadBytes, getDownloadURL // Storage functions
+            ref, uploadBytesResumable, getDownloadURL 
         };
         
         window.dispatchEvent(new Event('firebase-ready'));
@@ -73,7 +68,8 @@
             },
             animation: { 
                 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                'glow': 'glow 2s ease-in-out infinite alternate'
+                'glow': 'glow 2s ease-in-out infinite alternate',
+                'spin-slow': 'spin 3s linear infinite'
             },
             keyframes: {
                 glow: {
@@ -101,7 +97,6 @@
           width: 100%; background: #000; border: 2px solid #333; color: #00ffff;
           font-family: "VT323"; font-size: 1.5rem; padding: 0.5rem; outline: none;
       }
-      /* New Grayscale Utility */
       .bw-filter { filter: grayscale(100%) contrast(0.8) brightness(0.8); }
       .color-filter { filter: grayscale(0%) contrast(1.1) brightness(1.1); }
     </style>
@@ -112,9 +107,29 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const XLSX = window.XLSX;
 
         // --- COMPONENTS ---
+        
+        // Simple Loading Spinner
+        const LoadingSpinner = () => (
+            <div className="flex justify-center items-center p-4">
+                <div className="w-8 h-8 border-4 border-sd-pink border-t-sd-cyan rounded-full animate-spin"></div>
+            </div>
+        );
+
+        // Progress Bar Component
+        const ProgressBar = ({ progress }) => (
+            <div className="w-full bg-gray-800 border border-gray-600 h-6 mt-2 relative">
+                <div 
+                    className="h-full bg-sd-green transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                ></div>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-retro-head text-white drop-shadow-md">
+                    UPLOADING {Math.round(progress)}%
+                </div>
+            </div>
+        );
+
         const RetroCard = ({ children, title, color = 'pink', className = '' }) => {
             const colors = {
                 pink: { border: 'border-sd-pink', text: 'text-sd-pink' },
@@ -160,34 +175,64 @@
             );
         };
 
-        // --- QUEST ITEM (The Core Logic for B/W vs Color) ---
+        // --- UPLOAD HELPER FUNCTION ---
+        // Handles the progress logic for both Add and Edit modes
+        const uploadImageWithProgress = (file, setProgress) => {
+            return new Promise((resolve, reject) => {
+                if (!file) return resolve(null);
+                
+                // Create Storage Ref
+                const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${file.name}`);
+                
+                // Start Resumable Upload
+                const uploadTask = window.fs.uploadBytesResumable(storageRef, file);
+
+                uploadTask.on('state_changed', 
+                    (snapshot) => {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        setProgress(progress);
+                    }, 
+                    (error) => {
+                        reject(error);
+                    }, 
+                    async () => {
+                        const downloadURL = await window.fs.getDownloadURL(uploadTask.snapshot.ref);
+                        resolve(downloadURL);
+                    }
+                );
+            });
+        };
+
         const QuestItem = ({ todo, updateTodo, archiveTodo, deleteTodo, currentUser }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [editData, setEditData] = useState({ ...todo });
-            const [uploading, setUploading] = useState(false);
+            
+            // Upload States
+            const [uploadProgress, setUploadProgress] = useState(0);
+            const [isUploading, setIsUploading] = useState(false);
+            const [newFile, setNewFile] = useState(null);
+            
             const fileInputRef = useRef(null);
 
-            const handleImageUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setUploading(true);
+            const handleSave = async () => {
+                setIsUploading(true);
                 try {
-                    const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${file.name}`);
-                    await window.fs.uploadBytes(storageRef, file);
-                    const url = await window.fs.getDownloadURL(storageRef);
-                    setEditData(prev => ({ ...prev, imageUrl: url }));
-                } catch (error) {
-                    alert("Upload Failed: " + error.message);
+                    let finalImageUrl = editData.imageUrl;
+                    
+                    if (newFile) {
+                        finalImageUrl = await uploadImageWithProgress(newFile, setUploadProgress);
+                    }
+
+                    updateTodo(todo.id, { ...editData, imageUrl: finalImageUrl });
+                    setIsEditing(false);
+                } catch (err) {
+                    alert("Upload Error: " + err.message);
                 }
-                setUploading(false);
+                setIsUploading(false);
+                setUploadProgress(0);
+                setNewFile(null);
             };
 
-            const handleSave = () => {
-                updateTodo(todo.id, editData);
-                setIsEditing(false);
-            };
-
-            // EDIT MODE
             if (isEditing) {
                 return (
                     <li className="relative p-4 border-2 border-sd-green bg-gray-900 mb-4 shadow-lg">
@@ -195,37 +240,42 @@
                             <label className="text-sd-green font-retro-head text-[10px]">MISSION TITLE</label>
                             <input value={editData.text} onChange={(e) => setEditData({...editData, text: e.target.value})} className="retro-input" />
                             
-                            <label className="text-sd-green font-retro-head text-[10px]">MISSION DESCRIPTION</label>
-                            <textarea value={editData.description} onChange={(e) => setEditData({...editData, description: e.target.value})} className="retro-input" rows={3} placeholder="What happened?" />
+                            <label className="text-sd-green font-retro-head text-[10px]">DESCRIPTION</label>
+                            <textarea value={editData.description} onChange={(e) => setEditData({...editData, description: e.target.value})} className="retro-input" rows={3} />
 
                             <label className="text-sd-green font-retro-head text-[10px]">EVIDENCE (PHOTO)</label>
-                            <div className="flex items-center gap-2">
-                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
-                                <button onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-white px-3 py-2 font-retro-head text-xs border border-gray-500">
-                                    {uploading ? "UPLOADING..." : "CHOOSE FILE"}
-                                </button>
-                                {editData.imageUrl && <img src={editData.imageUrl} className="h-10 w-10 object-cover border border-white" />}
+                            
+                            {/* Image Preview & Upload UI */}
+                            <div className="border border-gray-600 p-2 bg-black/50">
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-white px-3 py-2 font-retro-head text-xs border border-gray-500 hover:bg-gray-600">
+                                        {editData.imageUrl || newFile ? "CHANGE PHOTO" : "ADD PHOTO"}
+                                    </button>
+                                    <input type="file" ref={fileInputRef} onChange={(e) => setNewFile(e.target.files[0])} className="hidden" accept="image/*" />
+                                    <span className="font-retro-body text-gray-400 truncate flex-1">
+                                        {newFile ? newFile.name : (editData.imageUrl ? "Current Image Loaded" : "No image selected")}
+                                    </span>
+                                </div>
+                                {isUploading && <ProgressBar progress={uploadProgress} />}
                             </div>
 
                             <div className="flex gap-2 pt-2">
-                                <button onClick={handleSave} disabled={uploading} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700">SAVE</button>
-                                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
+                                <button onClick={handleSave} disabled={isUploading} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700 hover:brightness-110 disabled:opacity-50">
+                                    {isUploading ? 'SAVING...' : 'SAVE'}
+                                </button>
+                                <button onClick={() => setIsEditing(false)} disabled={isUploading} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
                             </div>
                         </div>
                     </li>
                 );
             }
 
-            // VIEW MODE
-            // LOGIC: If completed ? "Color & Glow" : "B/W & Dim"
             const containerClasses = todo.completed 
                 ? "border-sd-pink bg-gray-900 animate-glow color-filter z-10 scale-[1.02]" 
                 : "border-gray-600 bg-gray-900 bw-filter opacity-80";
 
             return (
                 <li className={`relative p-4 border-4 mb-6 shadow-lg transition-all duration-500 ${containerClasses}`}>
-                    
-                    {/* Badge */}
                     <div className={`absolute -top-3 -right-1 px-2 py-0.5 text-[10px] font-retro-head border bg-gray-900 z-10 ${todo.createdBy === 'Brian' ? 'text-blue-400 border-blue-400' : 'text-purple-400 border-purple-400'}`}>
                         {todo.createdBy === 'Brian' ? 'P1' : (todo.createdBy === 'Nicole' ? 'P2' : 'CPU')}
                     </div>
@@ -249,11 +299,15 @@
                             </div>
                         </div>
 
-                        {/* Description & Photo Section */}
                         {(todo.description || todo.imageUrl) && (
                             <div className={`bg-black/40 p-3 border-l-4 ${todo.completed ? 'border-sd-pink' : 'border-gray-600'}`}>
                                 {todo.imageUrl && (
-                                    <img src={todo.imageUrl} className="w-full h-48 object-cover mb-2 border-2 border-white/20" alt="Quest evidence" />
+                                    <div className="relative mb-2 group">
+                                        <img src={todo.imageUrl} className="w-full h-48 object-cover border-2 border-white/20" alt="Quest evidence" />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-retro-head text-xs">
+                                            <a href={todo.imageUrl} target="_blank" className="hover:underline">OPEN FULL SIZE</a>
+                                        </div>
+                                    </div>
                                 )}
                                 {todo.description && (
                                     <p className="font-retro-body text-xl leading-snug whitespace-pre-wrap">{todo.description}</p>
@@ -261,7 +315,6 @@
                             </div>
                         )}
 
-                        {/* Ratings (Only visible when unlocked/completed) */}
                         {todo.completed && (
                              <div className="mt-2 pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
                                 <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
@@ -288,19 +341,21 @@
 
         const QuestLog = ({ user }) => {
             const [todos, setTodos] = useState([]);
-            const [viewMode, setViewMode] = useState('active'); // 'active' or 'archive'
+            const [viewMode, setViewMode] = useState('active');
             
-            // New Input States
             const [newInput, setNewInput] = useState('');
             const [newDesc, setNewDesc] = useState('');
             const [newDate, setNewDate] = useState('');
             const [newTime, setNewTime] = useState('');
-            const [newImage, setNewImage] = useState(null);
-            const [uploading, setUploading] = useState(false);
+            
+            // Upload States for "New Quest"
+            const [newImageFile, setNewImageFile] = useState(null);
+            const [uploadProgress, setUploadProgress] = useState(0);
+            const [isUploading, setIsUploading] = useState(false);
+            
             const fileInputRef = useRef(null);
 
             useEffect(() => {
-                // Fetch ALL quests, we filter client side to avoid Firestore Index errors for now
                 const q = window.fs.query(window.fs.collection(window.db, "quests"), window.fs.orderBy("createdAt", "desc"));
                 return window.fs.onSnapshot(q, (snapshot) => {
                     setTodos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -310,54 +365,47 @@
             const handleAdd = async (e) => {
                 e.preventDefault();
                 if (!newInput.trim()) return;
-                setUploading(true);
                 
-                let imageUrl = null;
-                // Handle Image Upload First
-                if (newImage) {
-                    try {
-                        const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${newImage.name}`);
-                        await window.fs.uploadBytes(storageRef, newImage);
-                        imageUrl = await window.fs.getDownloadURL(storageRef);
-                    } catch (err) {
-                        console.error("Image upload failed", err);
+                setIsUploading(true);
+                try {
+                    let imageUrl = null;
+                    if (newImageFile) {
+                        imageUrl = await uploadImageWithProgress(newImageFile, setUploadProgress);
                     }
+
+                    await window.fs.addDoc(window.fs.collection(window.db, "quests"), {
+                        text: newInput,
+                        description: newDesc,
+                        imageUrl: imageUrl,
+                        completed: false,
+                        archived: false,
+                        date: newDate, 
+                        time: newTime,
+                        createdBy: user.name, 
+                        brianRating: 0, 
+                        nicoleRating: 0,
+                        createdAt: window.fs.serverTimestamp()
+                    });
+
+                    // Reset Form
+                    setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); 
+                    setNewImageFile(null); 
+                    if(fileInputRef.current) fileInputRef.current.value = "";
+                } catch (err) {
+                    alert("Error saving quest: " + err.message);
                 }
-
-                await window.fs.addDoc(window.fs.collection(window.db, "quests"), {
-                    text: newInput,
-                    description: newDesc,
-                    imageUrl: imageUrl,
-                    completed: false,
-                    archived: false, // Default is not archived
-                    date: newDate, 
-                    time: newTime,
-                    createdBy: user.name, 
-                    brianRating: 0, 
-                    nicoleRating: 0,
-                    createdAt: window.fs.serverTimestamp()
-                });
-
-                setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); setNewImage(null); setUploading(false);
-                if(fileInputRef.current) fileInputRef.current.value = "";
+                setIsUploading(false);
+                setUploadProgress(0);
             };
 
             const updateTodo = async (id, data) => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), data); };
-            
-            const archiveTodo = async (id) => { 
-                if(confirm("Move this quest to the Memory Card (Archive)?")) {
-                    await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); 
-                }
-            };
-            
+            const archiveTodo = async (id) => { if(confirm("Move to Archive?")) await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); };
             const deleteTodo = async (id) => { if(confirm("Permanently delete?")) await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); };
 
-            // Filter logic
             const visibleTodos = todos.filter(t => viewMode === 'active' ? !t.archived : t.archived);
 
             return (
                 <div>
-                    {/* View Toggle */}
                     <div className="flex mb-6 border-b-4 border-gray-700">
                         <button onClick={() => setViewMode('active')} className={`flex-1 font-retro-head py-3 ${viewMode === 'active' ? 'bg-sd-pink text-black' : 'text-gray-500 hover:text-white'}`}>CURRENT QUESTS</button>
                         <button onClick={() => setViewMode('archive')} className={`flex-1 font-retro-head py-3 ${viewMode === 'archive' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>MEMORY CARD</button>
@@ -367,25 +415,27 @@
                         <RetroCard title="New Objective" color="orange">
                             <form onSubmit={handleAdd} className="bg-black/30 p-3 border-2 border-dashed border-gray-600">
                                 <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="Mission Title..." className="retro-input mb-2 text-xl" />
-                                
-                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Mission Briefing (Description)..." rows={3} className="retro-input mb-2 text-lg" />
+                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Briefing..." rows={3} className="retro-input mb-2 text-lg" />
                                 
                                 <div className="flex gap-2 mb-2">
                                      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
                                      <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
                                 </div>
                                 
-                                {/* Image Input */}
-                                <div className="mb-2 flex items-center gap-2">
-                                    <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-sd-cyan border border-sd-cyan px-3 py-2 font-retro-head text-xs">
-                                        {newImage ? "CHANGE PHOTO" : "UPLOAD PHOTO"}
-                                    </button>
-                                    <span className="font-retro-body text-gray-400">{newImage ? newImage.name : "No evidence selected"}</span>
-                                    <input type="file" ref={fileInputRef} onChange={(e) => setNewImage(e.target.files[0])} className="hidden" accept="image/*" />
+                                {/* Photo Upload with Progress Bar */}
+                                <div className="mb-4">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-sd-cyan border border-sd-cyan px-3 py-2 font-retro-head text-xs hover:bg-gray-600">
+                                            {newImageFile ? "CHANGE PHOTO" : "UPLOAD PHOTO"}
+                                        </button>
+                                        <span className="font-retro-body text-gray-400 truncate">{newImageFile ? newImageFile.name : "No evidence selected"}</span>
+                                        <input type="file" ref={fileInputRef} onChange={(e) => setNewImageFile(e.target.files[0])} className="hidden" accept="image/*" />
+                                    </div>
+                                    {isUploading && <ProgressBar progress={uploadProgress} />}
                                 </div>
 
-                                <button type="submit" disabled={uploading} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0">
-                                    {uploading ? "TRANSMITTING DATA..." : "UPLOAD TO CLOUD"}
+                                <button type="submit" disabled={isUploading} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
+                                    {isUploading ? "TRANSMITTING DATA..." : "UPLOAD TO CLOUD"}
                                 </button>
                             </form>
                         </RetroCard>
@@ -403,7 +453,6 @@
             );
         };
 
-        // --- MAIN APP ---
         const App = () => {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -428,8 +477,8 @@
                 checkFirebase();
             }, []);
 
-            if (!firebaseReady) return <div className="text-white p-10 font-retro-head">BOOTING SYSTEMS...</div>;
-            if (loading) return <div className="text-white p-10 font-retro-head">AUTHENTICATING...</div>;
+            if (!firebaseReady) return <div className="text-white p-10 font-retro-head flex flex-col items-center gap-4"><span>BOOTING SYSTEMS...</span><LoadingSpinner /></div>;
+            if (loading) return <div className="text-white p-10 font-retro-head flex flex-col items-center gap-4"><span>AUTHENTICATING...</span><LoadingSpinner /></div>;
             if (!user) return <LoginScreen />;
 
             return (

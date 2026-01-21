@@ -3,26 +3,31 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Brian & Nicole's Adventure v3.1 (Google Ed.)</title>
+    <title>Brian & Nicole's Adventure v4.0</title>
     
+    <!-- PWA Settings -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://img.icons8.com/color/180/pixel-heart.png">
     <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/pixel-heart.png">
 
+    <!-- Styles -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 
+    <!-- React Libraries -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 
+    <!-- FIREBASE SETUP -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // Added GoogleAuthProvider and signInWithPopup
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // NEW: Import Storage
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyD5UQOoCTZymLlIeCaR-SQ40yAwHSjdsrE",
@@ -36,15 +41,19 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        const storage = getStorage(app);
         const provider = new GoogleAuthProvider();
 
-        // Expose Firebase functions to window
+        // Expose Firebase functions
         window.db = db;
         window.auth = auth;
-        window.googleProvider = provider; // Expose the provider
+        window.storage = storage;
+        window.googleProvider = provider;
+        
         window.fs = {
             collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp,
-            signInWithPopup, signOut, onAuthStateChanged
+            signInWithPopup, signOut, onAuthStateChanged,
+            ref, uploadBytes, getDownloadURL // Storage functions
         };
         
         window.dispatchEvent(new Event('firebase-ready'));
@@ -62,7 +71,16 @@
               'retro-head': ['"Press Start 2P"', 'cursive'],
               'retro-body': ['"VT323"', 'monospace'],
             },
-            animation: { 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+            animation: { 
+                'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                'glow': 'glow 2s ease-in-out infinite alternate'
+            },
+            keyframes: {
+                glow: {
+                    '0%': { boxShadow: '0 0 5px #ff00ff' },
+                    '100%': { boxShadow: '0 0 20px #ff00ff, 0 0 10px #00ffff' }
+                }
+            }
           }
         }
       }
@@ -83,6 +101,9 @@
           width: 100%; background: #000; border: 2px solid #333; color: #00ffff;
           font-family: "VT323"; font-size: 1.5rem; padding: 0.5rem; outline: none;
       }
+      /* New Grayscale Utility */
+      .bw-filter { filter: grayscale(100%) contrast(0.8) brightness(0.8); }
+      .color-filter { filter: grayscale(0%) contrast(1.1) brightness(1.1); }
     </style>
 </head>
 <body>
@@ -90,14 +111,11 @@
     <div class="scanlines"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const XLSX = window.XLSX;
 
-        // --- HELPERS ---
-        const generateLoveStory = async () => "SYSTEM: Cloud Sync Active. Hearts Connected.";
-        const suggestQuestDetails = async () => "Check the sunset time!";
-
-        const RetroCard = ({ children, title, color = 'pink' }) => {
+        // --- COMPONENTS ---
+        const RetroCard = ({ children, title, color = 'pink', className = '' }) => {
             const colors = {
                 pink: { border: 'border-sd-pink', text: 'text-sd-pink' },
                 cyan: { border: 'border-sd-cyan', text: 'text-sd-cyan' },
@@ -106,7 +124,7 @@
             };
             const c = colors[color] || colors.pink;
             return (
-                <div className={`bg-gray-900 border-4 ${c.border} shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] p-4 relative mb-8`}>
+                <div className={`bg-gray-900 border-4 ${c.border} shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] p-4 relative mb-8 ${className}`}>
                     <div className={`absolute -top-5 left-4 bg-gray-900 px-2 ${c.text} font-retro-head text-sm uppercase tracking-widest border-l-2 border-r-2 ${c.border}`}>
                         {title}
                     </div>
@@ -115,7 +133,6 @@
             );
         };
 
-        // --- NEW GOOGLE LOGIN COMPONENT ---
         const LoginScreen = () => {
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(false);
@@ -123,7 +140,6 @@
             const handleGoogleLogin = async () => {
                 setLoading(true);
                 try {
-                    // Call the Popup function exposed in the module script
                     await window.fs.signInWithPopup(window.auth, window.googleProvider);
                 } catch (err) {
                     setError("LINK FAILURE: " + err.message);
@@ -135,64 +151,124 @@
                 <div className="min-h-screen flex items-center justify-center p-4 bg-sd-dark">
                     <div className="w-full max-w-sm bg-gray-900 border-4 border-sd-cyan p-6 text-center shadow-[0_0_20px_rgba(0,255,255,0.5)]">
                         <h1 className="font-retro-head text-xl text-sd-pink mb-6 retro-text-shadow">INSERT COIN</h1>
-                        
-                        <div className="mb-8 font-retro-body text-xl text-gray-300">
-                            Please identify yourself using your Google Comms Link.
-                        </div>
-
                         <button onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white text-black font-retro-head py-4 border-b-4 border-gray-400 active:border-b-0 active:translate-y-1 hover:bg-gray-100 flex items-center justify-center gap-3">
-                            <img src="https://img.icons8.com/color/48/google-logo.png" className="w-6 h-6" />
                             {loading ? 'CONNECTING...' : 'LOGIN WITH GOOGLE'}
                         </button>
-                        
-                        {error && <div className="mt-4 text-red-500 font-retro-body text-lg leading-tight">{error}</div>}
+                        {error && <div className="mt-4 text-red-500 font-retro-body text-lg">{error}</div>}
                     </div>
                 </div>
             );
         };
 
-        const QuestItem = ({ todo, updateTodo, deleteTodo, currentUser }) => {
+        // --- QUEST ITEM (The Core Logic for B/W vs Color) ---
+        const QuestItem = ({ todo, updateTodo, archiveTodo, deleteTodo, currentUser }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [editData, setEditData] = useState({ ...todo });
-            const mapLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(todo.text + " San Diego")}`;
-            
+            const [uploading, setUploading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            const handleImageUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploading(true);
+                try {
+                    const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${file.name}`);
+                    await window.fs.uploadBytes(storageRef, file);
+                    const url = await window.fs.getDownloadURL(storageRef);
+                    setEditData(prev => ({ ...prev, imageUrl: url }));
+                } catch (error) {
+                    alert("Upload Failed: " + error.message);
+                }
+                setUploading(false);
+            };
+
+            const handleSave = () => {
+                updateTodo(todo.id, editData);
+                setIsEditing(false);
+            };
+
+            // EDIT MODE
             if (isEditing) {
                 return (
                     <li className="relative p-4 border-2 border-sd-green bg-gray-900 mb-4 shadow-lg">
                         <div className="flex flex-col gap-3">
+                            <label className="text-sd-green font-retro-head text-[10px]">MISSION TITLE</label>
                             <input value={editData.text} onChange={(e) => setEditData({...editData, text: e.target.value})} className="retro-input" />
-                            <div className="flex gap-2">
-                                <button onClick={() => { updateTodo(todo.id, editData); setIsEditing(false); }} className="flex-1 bg-sd-green text-black font-retro-head py-2">SAVE</button>
-                                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2">CANCEL</button>
+                            
+                            <label className="text-sd-green font-retro-head text-[10px]">MISSION DESCRIPTION</label>
+                            <textarea value={editData.description} onChange={(e) => setEditData({...editData, description: e.target.value})} className="retro-input" rows={3} placeholder="What happened?" />
+
+                            <label className="text-sd-green font-retro-head text-[10px]">EVIDENCE (PHOTO)</label>
+                            <div className="flex items-center gap-2">
+                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                                <button onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-white px-3 py-2 font-retro-head text-xs border border-gray-500">
+                                    {uploading ? "UPLOADING..." : "CHOOSE FILE"}
+                                </button>
+                                {editData.imageUrl && <img src={editData.imageUrl} className="h-10 w-10 object-cover border border-white" />}
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={handleSave} disabled={uploading} className="flex-1 bg-sd-green text-black font-retro-head py-2 border-b-4 border-green-700">SAVE</button>
+                                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-700 text-white font-retro-head py-2 border-b-4 border-gray-900">CANCEL</button>
                             </div>
                         </div>
                     </li>
                 );
             }
 
+            // VIEW MODE
+            // LOGIC: If completed ? "Color & Glow" : "B/W & Dim"
+            const containerClasses = todo.completed 
+                ? "border-sd-pink bg-gray-900 animate-glow color-filter z-10 scale-[1.02]" 
+                : "border-gray-600 bg-gray-900 bw-filter opacity-80";
+
             return (
-                <li className={`relative p-4 border-2 mb-4 shadow-lg transition-all ${todo.completed ? 'border-gray-700 bg-gray-900/50 grayscale' : 'border-sd-cyan bg-gray-900'}`}>
+                <li className={`relative p-4 border-4 mb-6 shadow-lg transition-all duration-500 ${containerClasses}`}>
+                    
+                    {/* Badge */}
                     <div className={`absolute -top-3 -right-1 px-2 py-0.5 text-[10px] font-retro-head border bg-gray-900 z-10 ${todo.createdBy === 'Brian' ? 'text-blue-400 border-blue-400' : 'text-purple-400 border-purple-400'}`}>
                         {todo.createdBy === 'Brian' ? 'P1' : (todo.createdBy === 'Nicole' ? 'P2' : 'CPU')}
                     </div>
-                    <div className="flex justify-between items-start gap-3">
-                        <button onClick={() => updateTodo(todo.id, { completed: !todo.completed })} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 ${todo.completed ? 'bg-sd-cyan text-black' : 'border-gray-500'}`}>{todo.completed && '✓'}</button>
-                        <div className="flex-1 min-w-0 pt-1"> 
-                            <div className={`font-retro-body text-2xl uppercase ${todo.completed && 'line-through text-gray-500'}`}>{todo.text}</div>
-                            {(todo.date || todo.time) && <div className="text-sd-orange font-retro-head text-[10px]">⏰ {todo.date} {todo.time}</div>}
+
+                    <div className="flex flex-col gap-4">
+                        <div className="flex justify-between items-start gap-3">
+                            <button onClick={() => updateTodo(todo.id, { completed: !todo.completed })} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 transition-transform active:scale-95 ${todo.completed ? 'bg-sd-cyan text-black border-white shadow-[0_0_10px_#00ffff]' : 'border-gray-500 hover:border-white'}`}>
+                                {todo.completed && '✓'}
+                            </button>
+                            
+                            <div className="flex-1 min-w-0 pt-1"> 
+                                <div className={`font-retro-body text-3xl uppercase leading-none ${todo.completed ? 'text-sd-cyan text-shadow-neon' : 'text-gray-400'}`}>
+                                    {todo.text}
+                                </div>
+                                {(todo.date || todo.time) && <div className="text-sd-orange font-retro-head text-[10px] mt-1">⏰ {todo.date} {todo.time}</div>}
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                 <button onClick={() => setIsEditing(true)} className="w-[40px] h-[40px] bg-sd-orange border-b-4 border-yellow-700 text-black flex items-center justify-center">✏️</button>
+                                 <button onClick={() => archiveTodo(todo.id)} className="w-[40px] h-[40px] bg-gray-600 border-b-4 border-gray-800 text-white flex items-center justify-center" title="Archive">📦</button>
+                            </div>
                         </div>
-                        <div className="flex flex-col gap-2">
-                             <a href={mapLink} target="_blank" className="flex items-center justify-center w-[40px] h-[40px] bg-blue-600 border-b-4 border-blue-800 text-white">🗺️</a>
-                             <button onClick={() => setIsEditing(true)} className="flex items-center justify-center w-[40px] h-[40px] bg-sd-orange border-b-4 border-yellow-700 text-black">✏️</button>
-                             <button onClick={() => deleteTodo(todo.id)} className="flex items-center justify-center w-[40px] h-[40px] bg-red-600 border-b-4 border-red-800 text-white">🗑️</button>
-                        </div>
+
+                        {/* Description & Photo Section */}
+                        {(todo.description || todo.imageUrl) && (
+                            <div className={`bg-black/40 p-3 border-l-4 ${todo.completed ? 'border-sd-pink' : 'border-gray-600'}`}>
+                                {todo.imageUrl && (
+                                    <img src={todo.imageUrl} className="w-full h-48 object-cover mb-2 border-2 border-white/20" alt="Quest evidence" />
+                                )}
+                                {todo.description && (
+                                    <p className="font-retro-body text-xl leading-snug whitespace-pre-wrap">{todo.description}</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Ratings (Only visible when unlocked/completed) */}
+                        {todo.completed && (
+                             <div className="mt-2 pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
+                                <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
+                                <StarRating label="P2 RATING" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole'} color="text-purple-400" />
+                            </div>
+                        )}
                     </div>
-                    {todo.completed && (
-                         <div className="mt-4 pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
-                            <StarRating label="P1" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
-                            <StarRating label="P2" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole'} color="text-purple-400" />
-                        </div>
-                    )}
                 </li>
             );
         };
@@ -202,7 +278,9 @@
                 <span className={`${color} text-sm font-retro-head`}>{label}:</span>
                 <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((star) => (
-                        <button key={star} disabled={disabled} onClick={() => onChange(star)} className={`text-xl ${star <= (value || 0) ? 'text-yellow-400' : 'text-gray-700'}`}>{star <= (value || 0) ? '★' : '☆'}</button>
+                        <button key={star} disabled={disabled} onClick={() => onChange(star)} className={`text-xl ${star <= (value || 0) ? 'text-yellow-400 drop-shadow-[0_0_5px_rgba(255,255,0,0.8)]' : 'text-gray-600'}`}>
+                            {star <= (value || 0) ? '★' : '☆'}
+                        </button>
                     ))}
                 </div>
             </div>
@@ -210,11 +288,19 @@
 
         const QuestLog = ({ user }) => {
             const [todos, setTodos] = useState([]);
+            const [viewMode, setViewMode] = useState('active'); // 'active' or 'archive'
+            
+            // New Input States
             const [newInput, setNewInput] = useState('');
+            const [newDesc, setNewDesc] = useState('');
             const [newDate, setNewDate] = useState('');
             const [newTime, setNewTime] = useState('');
+            const [newImage, setNewImage] = useState(null);
+            const [uploading, setUploading] = useState(false);
+            const fileInputRef = useRef(null);
 
             useEffect(() => {
+                // Fetch ALL quests, we filter client side to avoid Firestore Index errors for now
                 const q = window.fs.query(window.fs.collection(window.db, "quests"), window.fs.orderBy("createdAt", "desc"));
                 return window.fs.onSnapshot(q, (snapshot) => {
                     setTodos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -224,34 +310,100 @@
             const handleAdd = async (e) => {
                 e.preventDefault();
                 if (!newInput.trim()) return;
+                setUploading(true);
+                
+                let imageUrl = null;
+                // Handle Image Upload First
+                if (newImage) {
+                    try {
+                        const storageRef = window.fs.ref(window.storage, `quest_photos/${Date.now()}_${newImage.name}`);
+                        await window.fs.uploadBytes(storageRef, newImage);
+                        imageUrl = await window.fs.getDownloadURL(storageRef);
+                    } catch (err) {
+                        console.error("Image upload failed", err);
+                    }
+                }
+
                 await window.fs.addDoc(window.fs.collection(window.db, "quests"), {
-                    text: newInput, completed: false, date: newDate, time: newTime,
-                    createdBy: user.name, brianRating: 0, nicoleRating: 0,
+                    text: newInput,
+                    description: newDesc,
+                    imageUrl: imageUrl,
+                    completed: false,
+                    archived: false, // Default is not archived
+                    date: newDate, 
+                    time: newTime,
+                    createdBy: user.name, 
+                    brianRating: 0, 
+                    nicoleRating: 0,
                     createdAt: window.fs.serverTimestamp()
                 });
-                setNewInput(''); setNewDate(''); setNewTime('');
+
+                setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); setNewImage(null); setUploading(false);
+                if(fileInputRef.current) fileInputRef.current.value = "";
             };
 
             const updateTodo = async (id, data) => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), data); };
-            const deleteTodo = async (id) => { if(confirm("Delete?")) await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); };
+            
+            const archiveTodo = async (id) => { 
+                if(confirm("Move this quest to the Memory Card (Archive)?")) {
+                    await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); 
+                }
+            };
+            
+            const deleteTodo = async (id) => { if(confirm("Permanently delete?")) await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); };
+
+            // Filter logic
+            const visibleTodos = todos.filter(t => viewMode === 'active' ? !t.archived : t.archived);
 
             return (
-                <RetroCard title="Mission Log" color="orange">
-                    <form onSubmit={handleAdd} className="mb-6 bg-black/30 p-3 border-2 border-dashed border-gray-600">
-                        <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="New Mission..." className="retro-input mb-2 text-xl" />
-                        <div className="flex gap-2 mb-2">
-                             <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
-                             <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
-                        </div>
-                        <button type="submit" className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0">UPLOAD TO CLOUD</button>
-                    </form>
-                    <ul className="space-y-4">
-                        {todos.map(todo => <QuestItem key={todo.id} todo={todo} updateTodo={updateTodo} deleteTodo={deleteTodo} currentUser={user} />)}
-                    </ul>
-                </RetroCard>
+                <div>
+                    {/* View Toggle */}
+                    <div className="flex mb-6 border-b-4 border-gray-700">
+                        <button onClick={() => setViewMode('active')} className={`flex-1 font-retro-head py-3 ${viewMode === 'active' ? 'bg-sd-pink text-black' : 'text-gray-500 hover:text-white'}`}>CURRENT QUESTS</button>
+                        <button onClick={() => setViewMode('archive')} className={`flex-1 font-retro-head py-3 ${viewMode === 'archive' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>MEMORY CARD</button>
+                    </div>
+
+                    {viewMode === 'active' && (
+                        <RetroCard title="New Objective" color="orange">
+                            <form onSubmit={handleAdd} className="bg-black/30 p-3 border-2 border-dashed border-gray-600">
+                                <input value={newInput} onChange={e => setNewInput(e.target.value)} placeholder="Mission Title..." className="retro-input mb-2 text-xl" />
+                                
+                                <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Mission Briefing (Description)..." rows={3} className="retro-input mb-2 text-lg" />
+                                
+                                <div className="flex gap-2 mb-2">
+                                     <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
+                                     <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
+                                </div>
+                                
+                                {/* Image Input */}
+                                <div className="mb-2 flex items-center gap-2">
+                                    <button type="button" onClick={() => fileInputRef.current.click()} className="bg-gray-700 text-sd-cyan border border-sd-cyan px-3 py-2 font-retro-head text-xs">
+                                        {newImage ? "CHANGE PHOTO" : "UPLOAD PHOTO"}
+                                    </button>
+                                    <span className="font-retro-body text-gray-400">{newImage ? newImage.name : "No evidence selected"}</span>
+                                    <input type="file" ref={fileInputRef} onChange={(e) => setNewImage(e.target.files[0])} className="hidden" accept="image/*" />
+                                </div>
+
+                                <button type="submit" disabled={uploading} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0">
+                                    {uploading ? "TRANSMITTING DATA..." : "UPLOAD TO CLOUD"}
+                                </button>
+                            </form>
+                        </RetroCard>
+                    )}
+
+                    <div className="space-y-6">
+                        {visibleTodos.length === 0 && (
+                            <div className="text-center font-retro-body text-gray-500 text-xl py-10">NO DATA FOUND IN SECTOR.</div>
+                        )}
+                        {visibleTodos.map(todo => (
+                            <QuestItem key={todo.id} todo={todo} updateTodo={updateTodo} archiveTodo={archiveTodo} deleteTodo={deleteTodo} currentUser={user} />
+                        ))}
+                    </div>
+                </div>
             );
         };
 
+        // --- MAIN APP ---
         const App = () => {
             const [user, setUser] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -263,8 +415,6 @@
                         setFirebaseReady(true);
                         window.fs.onAuthStateChanged(window.auth, (u) => {
                             if (u) {
-                                // LOGIC: Check if email contains 'brian' or 'nicole'. 
-                                // You can change this to match specific emails if needed.
                                 const email = u.email.toLowerCase();
                                 const name = email.includes('brian') ? 'Brian' : (email.includes('nicole') ? 'Nicole' : 'Guest');
                                 setUser({ email: u.email, name, photo: u.photoURL });
@@ -285,7 +435,7 @@
             return (
                 <div className="min-h-screen pb-20 bg-sd-dark">
                     <div className="min-h-screen w-full bg-sd-dark/90 backdrop-blur-sm overflow-y-auto">
-                        <header className="p-4 text-center border-b-4 border-sd-pink bg-black/50 sticky top-0 z-20 backdrop-blur-md">
+                        <header className="p-4 text-center border-b-4 border-sd-pink bg-black/50 sticky top-0 z-50 backdrop-blur-md">
                              <div className="flex justify-between items-center mb-2">
                                 <div className="flex items-center gap-2">
                                     {user.photo && <img src={user.photo} className="w-8 h-8 rounded-full border-2 border-white" />}

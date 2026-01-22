@@ -1,0 +1,22 @@
+{
+  "short_name": "BN Quest",
+  "name": "Brian & Nicole's Quest Log",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "index.html",
+  "background_color": "#1a0b2e",
+  "display": "standalone",
+  "theme_color": "#1a0b2e",
+  "description": "The official adventure log for Brian & Nicole."
+}

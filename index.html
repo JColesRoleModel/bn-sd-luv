@@ -3,20 +3,17 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Brian & Nicole's Quest Log v8.0</title>
+    <title>Brian & Nicole's Quest Log v8.1</title>
+    
+    <link rel="manifest" href="manifest.json">
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="B&N Quest">
-    
     <link rel="apple-touch-icon" href="assets/icon-180.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
-    <link rel="apple-touch-icon" sizes="192x192" href="assets/icon-192.png">
     
     <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png">
-
-    <link rel="manifest" href='data:application/manifest+json,{"name":"Brian & Nicole Quest","short_name":"B&N Quest","start_url":".","display":"standalone","background_color":"#1a0b2e","theme_color":"#1a0b2e","icons":[{"src":"assets/icon-192.png","sizes":"192x192","type":"image/png"},{"src":"assets/icon-512.png","sizes":"512x512","type":"image/png"}]}' />
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
@@ -110,6 +107,17 @@
     <div id="root"></div>
     <div class="scanlines"></div>
 
+    <script>
+      // REGISTER SERVICE WORKER
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('Service Worker registered!', reg))
+            .catch(err => console.log('Service Worker failed:', err));
+        });
+      }
+    </script>
+
     <script type="text/babel">
         const { useState, useEffect } = React;
 
@@ -181,7 +189,6 @@
             );
         };
 
-        // --- STARS COMPONENT ---
         const StarRating = ({ label, value, onChange, disabled, color }) => (
             <div className="flex justify-between items-center">
                 <span className={`${color} text-sm font-retro-head`}>{label}:</span>
@@ -196,7 +203,6 @@
             </div>
         );
 
-        // --- QUEST ITEM ---
         const QuestItem = ({ todo, updateTodo, archiveTodo, deleteTodo, currentUser }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [editData, setEditData] = useState({ ...todo });
@@ -219,16 +225,8 @@
                 e.preventDefault();
                 if(!commentInput.trim()) return;
                 vibrate();
-
-                const newComment = {
-                    text: commentInput,
-                    author: currentUser.name,
-                    timestamp: Date.now()
-                };
-
-                await updateTodo(todo.id, {
-                    comments: window.fs.arrayUnion(newComment)
-                });
+                const newComment = { text: commentInput, author: currentUser.name, timestamp: Date.now() };
+                await updateTodo(todo.id, { comments: window.fs.arrayUnion(newComment) });
                 setCommentInput('');
             };
 
@@ -264,14 +262,10 @@
                             <button onClick={handleToggle} className={`min-w-[44px] h-[44px] border-2 flex items-center justify-center mt-1 transition-transform active:scale-95 ${todo.completed ? 'bg-sd-cyan text-black border-white shadow-[0_0_10px_#00ffff]' : 'border-gray-500 hover:border-white'}`}>
                                 {todo.completed && '✓'}
                             </button>
-                            
                             <div className="flex-1 min-w-0 pt-1"> 
-                                <div className={`font-retro-body text-3xl uppercase leading-none ${todo.completed ? 'text-sd-cyan text-shadow-neon' : 'text-gray-400'}`}>
-                                    {todo.text}
-                                </div>
+                                <div className={`font-retro-body text-3xl uppercase leading-none ${todo.completed ? 'text-sd-cyan text-shadow-neon' : 'text-gray-400'}`}>{todo.text}</div>
                                 {(todo.date || todo.time) && <div className="text-sd-orange font-retro-head text-[10px] mt-1">⏰ {todo.date} {todo.time}</div>}
                             </div>
-
                             <div className="flex flex-col gap-2">
                                 <button onClick={() => { vibrate(); setIsEditing(true); }} className="w-[40px] h-[40px] bg-sd-orange border-b-4 border-yellow-700 text-black flex items-center justify-center">✏️</button>
                                 {todo.archived ? (
@@ -290,21 +284,16 @@
 
                         {todo.completed && (
                             <div className="space-y-2">
-                                {/* Ratings */}
                                 <div className="pt-3 border-t-2 border-dashed border-gray-700 grid grid-cols-1 gap-2">
                                     <StarRating label="P1 RATING" value={todo.brianRating} onChange={(val) => updateTodo(todo.id, { brianRating: val })} disabled={currentUser.name !== 'Brian'} color="text-blue-400" />
                                     <StarRating label="P2 RATING" value={todo.nicoleRating} onChange={(val) => updateTodo(todo.id, { nicoleRating: val })} disabled={currentUser.name !== 'Nicole'} color="text-purple-400" />
                                 </div>
-
-                                {/* Comments Section */}
                                 <div className="mt-4 bg-black/50 p-3 border border-gray-700">
                                     <h4 className="font-retro-head text-xs text-gray-400 mb-2">COMM LOG:</h4>
                                     <div className="space-y-2 mb-3">
                                         {todo.comments && todo.comments.map((c, i) => (
                                             <div key={i} className={`p-2 border-l-4 ${c.author === 'Nicole' ? 'border-sd-pink bg-sd-pink/10' : 'border-blue-400 bg-blue-900/20'}`}>
-                                                <div className={`text-[10px] font-retro-head mb-1 uppercase ${c.author === 'Nicole' ? 'text-sd-pink' : 'text-blue-400'}`}>
-                                                    {c.author}
-                                                </div>
+                                                <div className={`text-[10px] font-retro-head mb-1 uppercase ${c.author === 'Nicole' ? 'text-sd-pink' : 'text-blue-400'}`}>{c.author}</div>
                                                 <div className="font-retro-body text-lg leading-tight text-white">{c.text}</div>
                                             </div>
                                         ))}
@@ -327,16 +316,14 @@
             const [viewMode, setViewMode] = useState('active');
             const [sortMode, setSortMode] = useState('newest'); // 'newest', 'oldest', 'rating'
             
-            // New Entry States
             const [newInput, setNewInput] = useState('');
             const [newDesc, setNewDesc] = useState('');
             const [newDate, setNewDate] = useState('');
             const [newTime, setNewTime] = useState('');
-            const [initialRating, setInitialRating] = useState(0); // For auto-rating
+            const [initialRating, setInitialRating] = useState(0); 
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [shakeInput, setShakeInput] = useState(false);
-
-            const [modal, setModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDestructive: false });
+            const [modal, setModal] = useState({ isOpen: false });
 
             const vibrate = () => { if (navigator.vibrate) navigator.vibrate(20); };
 
@@ -348,79 +335,48 @@
                 });
             }, []);
 
-            // --- SORT LOGIC ---
             const getSortedTodos = (list) => {
                 const sorted = [...list];
-                if (sortMode === 'newest') {
-                    sorted.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                } else if (sortMode === 'oldest') {
-                    sorted.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-                } else if (sortMode === 'rating') {
-                    // Sort by average of brian + nicole rating
-                    sorted.sort((a, b) => {
-                        const scoreA = ((a.brianRating || 0) + (a.nicoleRating || 0));
-                        const scoreB = ((b.brianRating || 0) + (b.nicoleRating || 0));
-                        return scoreB - scoreA;
-                    });
+                if (sortMode === 'newest') sorted.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                else if (sortMode === 'oldest') sorted.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                else if (sortMode === 'rating') {
+                    sorted.sort((a, b) => ((b.brianRating || 0) + (b.nicoleRating || 0)) - ((a.brianRating || 0) + (a.nicoleRating || 0)));
                 }
                 return sorted;
             };
 
             const cycleSort = () => {
                 vibrate();
-                setSortMode(prev => {
-                    if (prev === 'newest') return 'oldest';
-                    if (prev === 'oldest') return 'rating';
-                    return 'newest';
-                });
+                setSortMode(prev => prev === 'newest' ? 'oldest' : (prev === 'oldest' ? 'rating' : 'newest'));
             };
 
             const handleAdd = async (e) => {
                 e.preventDefault();
                 vibrate();
-                if (!newInput.trim()) {
-                    setShakeInput(true);
-                    setTimeout(() => setShakeInput(false), 500);
-                    return;
-                }
-                
+                if (!newInput.trim()) { setShakeInput(true); setTimeout(() => setShakeInput(false), 500); return; }
                 setIsSubmitting(true);
                 try {
                     const newQuest = {
-                        text: newInput,
-                        description: newDesc,
-                        completed: false,
-                        archived: false,
-                        date: newDate, 
-                        time: newTime,
-                        createdBy: user.name, 
-                        // Auto-apply initial rating to the creator
+                        text: newInput, description: newDesc, completed: false, archived: false,
+                        date: newDate, time: newTime, createdBy: user.name, 
                         brianRating: user.name === 'Brian' ? initialRating : 0,
                         nicoleRating: user.name === 'Nicole' ? initialRating : 0,
-                        comments: [], 
-                        createdAt: window.fs.serverTimestamp()
+                        comments: [], createdAt: window.fs.serverTimestamp()
                     };
-
                     await window.fs.addDoc(window.fs.collection(window.db, "quests"), newQuest);
-                    
-                    // Reset
                     setNewInput(''); setNewDesc(''); setNewDate(''); setNewTime(''); setInitialRating(0);
                 } catch (err) { alert("Error: " + err.message); }
                 setIsSubmitting(false);
             };
 
             const updateTodo = async (id, data) => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), data); };
-            
             const archiveTodo = (id) => {
-                setModal({
-                    isOpen: true, title: "ARCHIVE MISSION", message: "Move to Memory Card?", confirmText: "ARCHIVE", isDestructive: false,
+                setModal({ isOpen: true, title: "ARCHIVE MISSION", message: "Move to Memory Card?", confirmText: "ARCHIVE", isDestructive: false,
                     onConfirm: async () => { await window.fs.updateDoc(window.fs.doc(window.db, "quests", id), { archived: true }); setModal({ isOpen: false }); }
                 });
             };
-
             const deleteTodo = (id) => {
-                setModal({
-                    isOpen: true, title: "DESTROY DATA", message: "Permanently delete this memory?", confirmText: "DELETE", isDestructive: true,
+                setModal({ isOpen: true, title: "DESTROY DATA", message: "Permanently delete this memory?", confirmText: "DELETE", isDestructive: true,
                     onConfirm: async () => { await window.fs.deleteDoc(window.fs.doc(window.db, "quests", id)); setModal({ isOpen: false }); }
                 });
             };
@@ -431,14 +387,12 @@
             return (
                 <div>
                     <RetroModal isOpen={modal.isOpen} title={modal.title} message={modal.message} confirmText={modal.confirmText} isDestructive={modal.isDestructive} onConfirm={modal.onConfirm} onCancel={() => setModal({...modal, isOpen: false})} />
-
-                    {/* Navigation Tabs */}
+                    
                     <div className="flex mb-2 border-b-4 border-gray-700">
                         <button onClick={() => { vibrate(); setViewMode('active'); }} className={`flex-1 font-retro-head py-3 ${viewMode === 'active' ? 'bg-sd-pink text-black' : 'text-gray-500 hover:text-white'}`}>CURRENT QUESTS</button>
                         <button onClick={() => { vibrate(); setViewMode('archive'); }} className={`flex-1 font-retro-head py-3 ${viewMode === 'archive' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-white'}`}>MEMORY CARD</button>
                     </div>
 
-                    {/* Sort Control */}
                     <div className="flex justify-end mb-4">
                         <button onClick={cycleSort} className="text-xs font-retro-head bg-gray-800 text-sd-cyan px-2 py-1 border border-sd-cyan uppercase">
                             SORT: {sortMode}
@@ -454,13 +408,10 @@
                                      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="retro-input flex-1" />
                                      <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="retro-input flex-1" />
                                 </div>
-                                
-                                {/* Auto-Rating Input */}
                                 <div className="mb-4 border-t border-gray-700 pt-2">
                                     <span className="text-xs font-retro-head text-gray-400 block mb-1">INITIAL RATING:</span>
                                     <StarRating label="" value={initialRating} onChange={setInitialRating} disabled={false} color="text-white" />
                                 </div>
-
                                 <button type="submit" disabled={isSubmitting} className="w-full bg-sd-orange text-black font-retro-head text-xs py-4 border-b-4 border-yellow-700 active:translate-y-1 active:border-b-0 disabled:opacity-50">
                                     {isSubmitting ? "TRANSMITTING DATA..." : "ADD TO LOG"}
                                 </button>
